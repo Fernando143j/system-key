@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Nexus • Secure Key System</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    </style>
+</head>
+<body class="bg-[#121218] text-white flex items-center justify-center min-h-screen p-4 selection:bg-indigo-500 selection:text-white">
+
+    <!-- Contenedor Principal (Estilo Tarjeta Moderna Z Nexus) -->
+    <div class="bg-[#181824] p-8 rounded-2xl shadow-2xl w-full max-w-md text-center border border-[#232330] relative overflow-hidden">
+        
+        <!-- Efecto de brillo superior -->
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent"></div>
+
+        <!-- Encabezado con Icono SVG de Escudo/Seguridad -->
+        <div class="flex justify-center mb-4">
+            <div class="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+            </div>
+        </div>
+
+        <h1 class="text-2xl font-bold tracking-tight text-white mb-1">Z NEXUS</h1>
+        <p class="text-gray-400 text-xs tracking-wider uppercase mb-6 font-medium">Sistema de Verificación Protegido</p>
+
+        <!-- Contenedor Dinámico -->
+        <div id="app-container" class="space-y-4">
+            <!-- Estado inicial de carga o contenido -->
+            <div class="flex flex-col items-center justify-center py-6 space-y-3">
+                <svg class="animate-spin h-6 w-6 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-gray-400 text-sm font-medium">Conectando con el servidor...</p>
+            </div>
+        </div>
+
+        <!-- Pie de página sutil -->
+        <div class="mt-8 pt-4 border-t border-[#232330] text-center">
+            <p class="text-gray-500 text-[11px]">Z Nexus Security Core v2.4 • Entorno Seguro</p>
+        </div>
+    </div>
+
+    <!-- Lógica de JavaScript y Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        // Configuración oficial de Firebase proporcionada
+        const firebaseConfig = {
+          apiKey: "AIzaSyDRizvAoXgFOeoqWvme9wwv2Ddjori4u2A",
+          authDomain: "nexus-online-w.firebaseapp.com",
+          databaseURL: "https://nexus-online-w-default-rtdb.firebaseio.com",
+          projectId: "nexus-online-w",
+          storageBucket: "nexus-online-w.firebasestorage.app",
+          messagingSenderId: "363149552987",
+          appId: "1:363149552987:web:1a838a7a021d24b97b3e7e"
+        };
+
+        const container = document.getElementById("app-container");
+
+        try {
+            // Inicializar Firebase de forma segura
+            const app = initializeApp(firebaseConfig);
+            const db = getDatabase(app);
+
+            // Revisar parámetros de URL (si viene de completar el acortador)
+            const urlParams = new URLSearchParams(window.location.search);
+            const isSuccess = urlParams.get("step") === "success";
+
+            if (!isSuccess) {
+                // PANTALLA 1: Botón de inicio para conseguir la Key
+                renderInitialScreen();
+            } else {
+                // PANTALLA 2: Generar key tras completar los anuncios
+                processKeyGeneration(db);
+            }
+
+        } catch (error) {
+            console.error("Error crítico al inicializar:", error);
+            container.innerHTML = `
+                <div class="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-center">
+                    <p class="text-red-400 text-sm font-semibold mb-1">Error de conexión</p>
+                    <p class="text-gray-400 text-xs">No se pudo establecer enlace con Firebase. Recarga la página.</p>
+                </div>
+            `;
+        }
+
+        // Renderizar Pantalla Inicial
+        function renderInitialScreen() {
+            container.innerHTML = `
+                <p class="text-gray-300 text-sm mb-6 leading-relaxed">
+                    Obtén tu acceso exclusivo para el script Z Nexus completando el proceso de verificación rápido.
+                </p>
+                <button id="start-btn" class="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] font-bold rounded-xl transition-all duration-200 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2 group">
+                    <svg class="w-5 h-5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                    <span>Iniciar Sistema</span>
+                </button>
+                <p class="text-gray-500 text-xs mt-4">Libre de publicidad maliciosa.</p>
+            `;
+
+            document.getElementById("start-btn").addEventListener("click", () => {
+                triggerLoadingSequence();
+            });
+        }
+
+        // Secuencia de carga de 3 segundos con animación "Load..."
+        function triggerLoadingSequence() {
+            const steps = [
+                "Inicializando protocolos de seguridad...",
+                "Comprobando integridad del dispositivo...",
+                "Generando enlace de redirección seguro..."
+            ];
+
+            let index = 0;
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-8 space-y-4">
+                    <svg class="animate-spin h-8 w-8 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p id="loading-text" class="text-indigo-300 text-sm font-medium animate-pulse">${steps[0]}</p>
+                </div>
+            `;
+
+            const interval = setInterval(() => {
+                index++;
+                if (index < steps.length) {
+                    document.getElementById("loading-text").innerText = steps[index];
+                } else {
+                    clearInterval(interval);
+                    redirectToAdProvider();
+                }
+            }, 1000);
+        }
+
+        // Redirigir al acortador (Linkvertise configurando el target de retorno)
+        function redirectToAdProvider() {
+            // El target apunta de regreso a esta misma página web con ?step=success
+            const currentReturnUrl = window.location.origin + window.location.pathname + "?step=success";
+            
+            // ⚠️ REEMPLAZA ESTE ENLACE CON TU LINK REAL DE LINKVERTISE ⚠️
+            const linkvertiseBaseUrl = "https://linkvertise.com/TU_ID/tu-enlace-de-anuncios";
+            
+            const finalRedirectUrl = `${linkvertiseBaseUrl}?target=${encodeURIComponent(currentReturnUrl)}`;
+            
+            window.location.href = finalRedirectUrl;
+        }
+
+        // Generar y Guardar Key en Firebase
+        async function processKeyGeneration(db) {
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-6 space-y-3">
+                    <svg class="animate-spin h-6 w-6 text-emerald-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-emerald-400 text-sm font-medium">Verificando paso de anuncios...</p>
+                </div>
+            `;
+
+            // Generar cadena única aleatoria
+            const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            let randomCode = "";
+            for (let i = 0; i < 9; i++) {
+                randomCode += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            const uniqueKey = "ZNEXUS-" + randomCode;
+
+            try {
+                // Guardar registro en la Realtime Database de Firebase
+                await set(ref(db, 'keys/' + uniqueKey), {
+                    createdAt: Date.now(),
+                    expiresAt: Date.now() + (12 * 60 * 60 * 1000) // Validez de 12 horas
+                });
+
+                // Mostrar Key generada con diseño limpio e icono SVG de copiar
+                container.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-center space-x-1.5 text-emerald-400 font-semibold text-sm">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                            <span>¡Verificación Exitosa!</span>
+                        </div>
+
+                        <div class="bg-[#121218] p-3.5 rounded-xl border border-gray-700/60 font-mono text-indigo-300 text-base tracking-wider select-all font-bold">
+                            ${uniqueKey}
+                        </div>
+
+                        <button id="copy-btn" class="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] font-bold rounded-xl transition-all duration-200 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+                            </svg>
+                            <span>Copiar Key</span>
+                        </button>
+                        <p class="text-gray-400 text-xs mt-2">Pega esta key en el script de Z Nexus dentro de Roblox.</p>
+                    </div>
+                `;
+
+                document.getElementById("copy-btn").addEventListener("click", () => {
+                    navigator.clipboard.writeText(uniqueKey);
+                    const btn = document.getElementById("copy-btn");
+                    btn.innerHTML = `
+                        <svg class="w-5 h-5 text-emerald-300" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        <span>¡Key Copiada!</span>
+                    `;
+                    btn.classList.remove("bg-indigo-600", "hover:bg-indigo-500");
+                    btn.classList.add("bg-emerald-600");
+                });
+
+            } catch (err) {
+                console.error("Error al guardar en Firebase:", err);
+                container.innerHTML = `
+                    <div class="bg-red-500/10 border border-red-500/20 p-4 rounded-xl text-center">
+                        <p class="text-red-400 text-sm font-semibold mb-1">Error al registrar Key</p>
+                        <p class="text-gray-400 text-xs">No se pudo guardar en la base de datos. Vuelve a intentarlo.</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
+
