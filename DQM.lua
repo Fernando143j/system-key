@@ -1401,27 +1401,25 @@ local function sellFishRoutine()
         end
     end
 
-    local function triggerBeaconTouch()
-        if touchPart and hrp and hrp.Parent then
-            pcall(function() hrp.CFrame = CFrame.new(touchPart.Position + Vector3.new(0, 1.2, 0)) end)
-            if typeof(firetouchinterest) == "function" then
-                pcall(function()
-                    firetouchinterest(hrp, touchPart, 0)
-                    task.wait(0.08)
-                    firetouchinterest(hrp, touchPart, 1)
-                end)
-            end
-        else
-            pcall(function() hrp.CFrame = CFrame.new(COORD_SELL_WP2) end)
+    if touchPart and hrp and hrp.Parent then
+        pcall(function() hrp.CFrame = CFrame.new(touchPart.Position) end)
+        if typeof(firetouchinterest) == "function" then
+            pcall(function() firetouchinterest(hrp, touchPart, 0) end)
         end
+    else
+        pcall(function() hrp.CFrame = CFrame.new(COORD_SELL_WP2) end)
     end
 
     local fishRemote = ReplicatedStorage:FindFirstChild("MD_FishingRemote")
-    local startCash = tonumber(LocalPlayer:GetAttribute("Cash")) or 0
+    local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
+    local getRemote = remotesFolder and remotesFolder:FindFirstChild("Get")
+    local sendRemote = remotesFolder and remotesFolder:FindFirstChild("Send")
+
+    local startCash = getPlayerCash()
     local sellConfirmed = false
     lastSellConfirmed = false
 
-    for attempt = 1, 8 do
+    for attempt = 1, 10 do
         if not fish2Active then break end
 
         local distSeller = (hrp.Position - COORD_SELL_WP2).Magnitude
@@ -1430,30 +1428,67 @@ local function sellFishRoutine()
             fish2HoldPosition(COORD_SELL_WP2, 1.0)
         end
 
-        triggerBeaconTouch()
-        task.wait(0.15)
+        if touchPart and hrp and hrp.Parent then
+            pcall(function() hrp.CFrame = CFrame.new(touchPart.Position) end)
+            if typeof(firetouchinterest) == "function" then
+                pcall(function() firetouchinterest(hrp, touchPart, 0) end)
+            end
+        end
+
+        if fishRemote then
+            pcall(function() fishRemote:FireServer("OpenSell") end)
+            pcall(function() fishRemote:FireServer("SellList") end)
+            pcall(function() fishRemote:FireServer("Open") end)
+            pcall(function() fishRemote:FireServer("SellAll") end)
+        end
+
+        if getRemote then
+            pcall(function() getRemote:InvokeServer(1, "sell_all_fish") end)
+        end
+        if sendRemote then
+            pcall(function() sendRemote:FireServer(1, "sell_all_fish") end)
+        end
+
+        pcall(function()
+            local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
+            if itemsUI and itemsUI.select_an_item then
+                itemsUI.select_an_item(function(p1, p2) return p2 == "fish" end, function() end)
+            end
+        end)
+        pcall(function()
+            local coreUI = require(ReplicatedStorage.Modules.Core.UI)
+            if coreUI and coreUI.get then
+                local b = coreUI.get("SellAllFishButton")
+                if b then
+                    b.Visible = true
+                    if typeof(firesignal) == "function" and b.MouseButton1Down then
+                        firesignal(b.MouseButton1Down)
+                    end
+                end
+            end
+        end)
 
         local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
         local gui = pg and pg:FindFirstChild("MD_FishSellGui")
         local panel = gui and gui:FindFirstChild("FishSellPanel", true)
-        local sellAllBtn = panel and panel:FindFirstChild("SellAll")
-
-        if sellAllBtn then
-            pcall(function()
-                if typeof(firesignal) == "function" and sellAllBtn.Activated then
-                    firesignal(sellAllBtn.Activated)
-                end
-            end)
-        end
-
-        if fishRemote then
-            pcall(function() fishRemote:FireServer("SellAll") end)
+        if panel then
+            panel.Visible = true
+            if gui then gui.Enabled = true end
+            local sellAllBtn = panel:FindFirstChild("SellAll")
+            if sellAllBtn then
+                sellAllBtn.Visible = true
+                pcall(function()
+                    if typeof(firesignal) == "function" and sellAllBtn.Activated then
+                        firesignal(sellAllBtn.Activated)
+                    end
+                end)
+            end
         end
 
         local checkStart = tick()
         while tick() - checkStart < 1.0 do
             task.wait(0.1)
-            local curCash = tonumber(LocalPlayer:GetAttribute("Cash")) or 0
+            local curCash = getPlayerCash()
             local remainingFish = getFishCount()
             if lastSellConfirmed or (curCash > startCash) or (remainingFish == 0) then
                 sellConfirmed = true
@@ -1462,7 +1497,11 @@ local function sellFishRoutine()
         end
 
         if sellConfirmed then break end
-        task.wait(0.25)
+        task.wait(0.2)
+    end
+
+    if touchPart and hrp and hrp.Parent and typeof(firetouchinterest) == "function" then
+        pcall(function() firetouchinterest(hrp, touchPart, 1) end)
     end
 
     lastSellConfirmed = false
@@ -1477,6 +1516,13 @@ local function sellFishRoutine()
         end
         panel.Visible = false
     end
+    pcall(function()
+        local coreUI = require(ReplicatedStorage.Modules.Core.UI)
+        if coreUI and coreUI.get then
+            local b = coreUI.get("SellAllFishButton")
+            if b then b.Visible = false end
+        end
+    end)
 
     task.wait(0.5)
 
@@ -1958,14 +2004,12 @@ autoFishToggle = Tabs.Farm2:Toggle({
 
 local Camera = workspace.CurrentCamera
 
-_G.Silent_Enabled         = false
-_G.Silent_Range           = 350
-_G.Silent_FOV             = 130
-_G.Silent_ShowFOV         = false
-_G.Silent_TeamCheck       = false
-_G.Silent_Priority        = "Head"
-_G.Silent_PredictEnabled  = false
-_G.Silent_PredictStrength = 5
+_G.Silent_Enabled   = false
+_G.Silent_Range     = 350
+_G.Silent_FOV       = 130
+_G.Silent_ShowFOV   = false
+_G.Silent_TeamCheck = false
+_G.Silent_Priority  = "Head"
 
 local CurrentTargetPart = nil
 local WeaponEquipped    = false
@@ -1999,50 +2043,6 @@ local function resolveBestPart(targetChar)
     end
 
     return head or torso
-end
-
--- Predicción: posición futura = posición actual + velocidad * (ping + tiempo de vuelo de bala)
-local function getPredictedPosition(targetPart, origin)
-    local currentPos = targetPart.Position
-
-    if not _G.Silent_PredictEnabled or _G.Silent_PredictStrength <= 0 then
-        return currentPos
-    end
-
-    local ok, result = pcall(function()
-        local velocity = targetPart.AssemblyLinearVelocity or Vector3.zero
-
-        -- Ping en segundos (GetNetworkPing devuelve RTT/2)
-        local ping = 0
-        pcall(function() ping = LocalPlayer:GetNetworkPing() end)
-        if typeof(ping) ~= "number" or ping ~= ping or ping < 0 then ping = 0 end
-        ping = math.clamp(ping, 0, 1)
-
-        -- Tiempo estimado de vuelo de la bala (asume ~800 studs/s, ajustable con el slider)
-        local distance   = (currentPos - origin).Magnitude
-        local travelTime = distance / 800
-
-        -- El slider 1-20 escala el lead: 10 = 1x exacto, 20 = 2x agresivo
-        local strength   = _G.Silent_PredictStrength / 10
-        local predictTime = (travelTime + ping) * strength
-
-        local predicted = currentPos + (velocity * predictTime)
-
-        -- Guard contra NaN / Inf (causa de balas invisibles)
-        if predicted.X ~= predicted.X or predicted.Y ~= predicted.Y or predicted.Z ~= predicted.Z then
-            return currentPos
-        end
-        if predicted.Magnitude > 100000 then
-            return currentPos
-        end
-
-        return predicted
-    end)
-
-    if ok and typeof(result) == "Vector3" then
-        return result
-    end
-    return currentPos
 end
 
 local function getClosestTargetBy3D()
@@ -2099,34 +2099,21 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
             if remoteName == "GlockEvent" and args[1] == "Shoot" and type(args[2]) == "table" then
                 local data   = args[2]
                 local origin = data.origin or Camera.CFrame.Position
-                local aimPos = getPredictedPosition(CurrentTargetPart, origin)
-                local dir    = aimPos - origin
-                -- Solo toca el paquete si el vector es válido, si no pasa intacto
-                if dir.Magnitude > 0.01 then
-                    data.direction = dir.Unit
-                    return oldNamecall(self, "Shoot", data)
-                end
+                data.direction = (CurrentTargetPart.Position - origin).Unit
+                return oldNamecall(self, "Shoot", data)
             end
 
             if remoteName == "MD_ItemsEvent" and args[1] == "FireGun" and type(args[2]) == "table" then
                 local data   = args[2]
                 local origin = data.origin or Camera.CFrame.Position
-                local aimPos = getPredictedPosition(CurrentTargetPart, origin)
-                local dir    = aimPos - origin
-                if dir.Magnitude > 0.01 then
-                    data.direction = dir.Unit
-                    return oldNamecall(self, "FireGun", data)
-                end
+                data.direction = (CurrentTargetPart.Position - origin).Unit
+                return oldNamecall(self, "FireGun", data)
             end
         end
 
         if self == Camera and (method == "ViewportPointToRay" or method == "ScreenPointToRay") then
             local origin = Camera.CFrame.Position
-            local aimPos = getPredictedPosition(CurrentTargetPart, origin)
-            local dir    = aimPos - origin
-            if dir.Magnitude > 0.01 then
-                return Ray.new(origin, dir.Unit)
-            end
+            return Ray.new(origin, (CurrentTargetPart.Position - origin).Unit)
         end
     end
 
@@ -2164,27 +2151,6 @@ Tabs.Combat:Toggle({
         else
             FOVCircleSilent.Visible = _G.Silent_ShowFOV
         end
-    end
-})
-
-Tabs.Combat:Toggle({
-    Title    = "Predicción",
-    Desc     = "Apunta a donde estará el objetivo (velocidad + ping). Actívalo si falla mucho",
-    Icon     = "solar:radar-2-bold",
-    Value    = false,
-    Callback = function(state)
-        _G.Silent_PredictEnabled = state
-    end
-})
-
-Tabs.Combat:Slider({
-    Title    = "Fuerza de Predicción",
-    Desc     = "1-20. Sube si el objetivo se mueve rápido y aún falla. Baja si te pasas de largo",
-    Icon     = "solar:tuning-2-bold",
-    Step     = 1,
-    Value    = { Min = 1, Max = 20, Default = 5 },
-    Callback = function(v)
-        _G.Silent_PredictStrength = v
     end
 })
 
