@@ -1,3 +1,5 @@
+-- Hola
+
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local UserInputService  = game:GetService("UserInputService")
@@ -770,9 +772,6 @@ local F2_SPEED_LEVELS = {
     ["Nivel 2"] = 40,
 }
 local F2_SPEED = 20
-local antiSkidsActive = false
-local isSafeHealing = false
-local COORD_SAFE_HEAL = Vector3.new(489.397, 256.118, -17.302)
 local fishHoldConn  = nil
 local fishEventConn = nil
 local isSellingFish = false
@@ -923,131 +922,7 @@ local function fish2HoldPosition(targetPos, duration)
     return fish2Active and (hrp and (hrp.Position - targetVector).Magnitude <= 3.8)
 end
 
-local function fish2GlideTo(target, speed)
-    if not hrp or not hrp.Parent then return false end
-    local start = hrp.Position
-    local dist = (start - target).Magnitude
-    if dist < 1 then
-        hrp.CFrame = CFrame.new(target)
-        return true
-    end
-    local underStart  = Vector3.new(start.X,  start.Y  - 10, start.Z)
-    local underTarget = Vector3.new(target.X, target.Y - 10, target.Z)
-    local duration = math.max(dist / (speed * 4), 0.05)
-    local elapsed = 0
-    local done = false
 
-    killFishMove()
-    activeFishMove = RunService.Heartbeat:Connect(function(dt)
-        elapsed += dt
-        local t = math.min(elapsed / duration, 1)
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-        hrp.CFrame = CFrame.new(underStart:Lerp(underTarget, t))
-        if t >= 1 then
-            killFishMove()
-            done = true
-        end
-    end)
-
-    while not done and (hum and hum.Health > 0) do
-        task.wait()
-    end
-
-    if hrp and hrp.Parent then
-        hrp.CFrame = CFrame.new(target)
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-    end
-    return true
-end
-
-local function safeHealRoutine()
-    if isSafeHealing or not fish2Active then return end
-    isSafeHealing = true
-
-    local fishRemote = ReplicatedStorage:FindFirstChild("MD_FishingRemote")
-    if fishRemote then
-        pcall(function() fishRemote:FireServer("Cancel") end)
-    end
-
-    if fishHoldConn then pcall(function() fishHoldConn:Disconnect() end); fishHoldConn = nil end
-    if hrp and hrp.Parent then hrp.Anchored = false end
-    task.wait(0.1)
-
-    fish2GlideTo(COORD_SAFE_HEAL, 75)
-
-    if hrp and hrp.Parent then
-        hrp.CFrame = CFrame.new(COORD_SAFE_HEAL)
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-        hrp.Anchored = true
-    end
-
-    while fish2Active and antiSkidsActive and hum and hum.Parent and hum.Health < 100 and hum.Health > 0 do
-        task.wait(0.25)
-    end
-
-    if not fish2Active or not hum or hum.Health <= 0 then
-        isSafeHealing = false
-        return
-    end
-
-    if hrp and hrp.Parent then hrp.Anchored = false end
-    task.wait(0.1)
-
-    local targetCFrame = FISH_ZONES[fish2Zone] or FISH_ZONES["Nivel 0"]
-
-    local standPart = workspace:FindFirstChild("MD_FishStand_Safe")
-    if not standPart then
-        standPart = Instance.new("Part")
-        standPart.Name = "MD_FishStand_Safe"
-        standPart.Size = Vector3.new(15, 2, 15)
-        standPart.Anchored = true
-        standPart.CanCollide = true
-        standPart.Transparency = 1
-        standPart.Parent = workspace
-    end
-    standPart.CFrame = CFrame.new(targetCFrame.Position - Vector3.new(0, 3.1, 0))
-
-    fish2Move(targetCFrame)
-
-    hrp.CFrame = targetCFrame
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
-    hrp.Anchored = true
-
-    if fishHoldConn then pcall(function() fishHoldConn:Disconnect() end) end
-    fishHoldConn = RunService.Heartbeat:Connect(function()
-        if not fish2Active or not hrp or not hrp.Parent then return end
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.AssemblyAngularVelocity = Vector3.zero
-        if not hrp.Anchored then hrp.Anchored = true end
-    end)
-
-    local curRod = f2_getBestRod()
-    local curBait = f2_getBait()
-    if curRod then
-        pcall(function() hum:EquipTool(curRod) end)
-        task.wait(0.2)
-    end
-    if curRod and curBait then
-        ensureBaitLoaded(curRod, curBait)
-    end
-
-    isSafeHealing = false
-end
-
-local function f2_setupHealthWatch()
-    if hum then
-        hum.HealthChanged:Connect(function(hp)
-            if antiSkidsActive and not isSafeHealing and fish2Active and hp < 80 and hp > 0 then
-                task.spawn(safeHealRoutine)
-            end
-        end)
-    end
-end
-f2_setupHealthWatch()
 
 local function f2_findItem(itemName)
     if not itemName then return nil end
@@ -1398,39 +1273,12 @@ local function sellFishRoutine()
 
     if fishHoldConn then pcall(function() fishHoldConn:Disconnect() end); fishHoldConn = nil end
     if hrp and hrp.Parent then hrp.Anchored = false end
-    task.wait(0.15)
-
-    local wp1Ok = false
-    for wp1Try = 1, 10 do
-        if not fish2Active then break end
-        fish2Move(COORD_SELL_WP1)
-        if fish2HoldPosition(COORD_SELL_WP1, 2.0) then
-            wp1Ok = true
-            break
-        end
-        task.wait(0.2)
-    end
-    if not wp1Ok and fish2Active then
-        fish2Move(COORD_SELL_WP1)
-        fish2HoldPosition(COORD_SELL_WP1, 2.0)
-    end
-
     task.wait(0.1)
 
-    local wp2Ok = false
-    for wp2Try = 1, 10 do
-        if not fish2Active then break end
-        fish2Move(COORD_SELL_WP2)
-        if fish2HoldPosition(COORD_SELL_WP2, 2.0) then
-            wp2Ok = true
-            break
-        end
-        task.wait(0.2)
-    end
-    if not wp2Ok and fish2Active then
-        fish2Move(COORD_SELL_WP2)
-        fish2HoldPosition(COORD_SELL_WP2, 2.0)
-    end
+    fish2Move(COORD_SELL_WP1)
+    task.wait(0.1)
+    fish2Move(COORD_SELL_WP2)
+    task.wait(0.1)
 
     local beacon = workspace:FindFirstChild("SellFishBeacon", true)
     local touchPart = (beacon and beacon:FindFirstChild("TouchPart"))
@@ -1443,7 +1291,7 @@ local function sellFishRoutine()
     end
 
     if touchPart and hrp and hrp.Parent then
-        pcall(function() hrp.CFrame = CFrame.new(touchPart.Position) end)
+        pcall(function() hrp.CFrame = CFrame.new(touchPart.Position + Vector3.new(0, 1.2, 0)) end)
         if typeof(firetouchinterest) == "function" then
             pcall(function() firetouchinterest(hrp, touchPart, 0) end)
         end
@@ -1452,58 +1300,45 @@ local function sellFishRoutine()
     end
 
     local fishRemote = ReplicatedStorage:FindFirstChild("MD_FishingRemote")
-    local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
-    local getRemote = remotesFolder and remotesFolder:FindFirstChild("Get")
-    local sendRemote = remotesFolder and remotesFolder:FindFirstChild("Send")
+    if fishRemote then
+        pcall(function() fishRemote:FireServer("OpenSell") end)
+        pcall(function() fishRemote:FireServer("SellList") end)
+    end
+
+    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    local gui = pg and pg:FindFirstChild("MD_FishSellGui")
+    local panel = gui and gui:FindFirstChild("FishSellPanel", true)
+    if panel then
+        panel.Visible = true
+        if gui then gui.Enabled = true end
+    end
+    pcall(function()
+        local coreUI = require(ReplicatedStorage.Modules.Core.UI)
+        if coreUI and coreUI.get then
+            local b = coreUI.get("SellAllFishButton")
+            if b then b.Visible = true end
+        end
+    end)
 
     local startCash = getPlayerCash()
-    local sellConfirmed = false
     lastSellConfirmed = false
 
+    local sellAllBtn = panel and panel:FindFirstChild("SellAll")
     for attempt = 1, 10 do
         if not fish2Active then break end
 
-        local distSeller = (hrp.Position - COORD_SELL_WP2).Magnitude
-        if distSeller > 4.5 then
-            fish2Move(COORD_SELL_WP2)
-            fish2HoldPosition(COORD_SELL_WP2, 1.0)
-        end
-
-        if touchPart and hrp and hrp.Parent then
-            pcall(function() hrp.CFrame = CFrame.new(touchPart.Position) end)
-            if typeof(firetouchinterest) == "function" then
-                pcall(function() firetouchinterest(hrp, touchPart, 0) end)
-            end
-        end
-
         if fishRemote then
-            pcall(function() fishRemote:FireServer("OpenSell") end)
-            pcall(function() fishRemote:FireServer("SellList") end)
-            pcall(function() fishRemote:FireServer("Open") end)
             pcall(function() fishRemote:FireServer("SellAll") end)
         end
 
-        if getRemote then
-            task.spawn(function()
-                pcall(function() getRemote:InvokeServer(1, "sell_all_fish") end)
-            end)
-        end
-        if sendRemote then
-            pcall(function() sendRemote:FireServer(1, "sell_all_fish") end)
-        end
-        task.spawn(function()
+        if sellAllBtn then
+            sellAllBtn.Visible = true
             pcall(function()
-                local Net = require(ReplicatedStorage.Modules.Core.Net)
-                if Net and Net.get then Net.get("sell_all_fish") end
+                if typeof(firesignal) == "function" and sellAllBtn.Activated then
+                    firesignal(sellAllBtn.Activated)
+                end
             end)
-        end)
-
-        pcall(function()
-            local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
-            if itemsUI and itemsUI.select_an_item then
-                itemsUI.select_an_item(function(p1, p2) return p2 == "fish" end, function() end)
-            end
-        end)
+        end
 
         pcall(function()
             local coreUI = require(ReplicatedStorage.Modules.Core.UI)
@@ -1518,72 +1353,24 @@ local function sellFishRoutine()
             end
         end)
 
-        local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-        local gui = pg and pg:FindFirstChild("MD_FishSellGui")
-        local panel = gui and gui:FindFirstChild("FishSellPanel", true)
-        if panel then
-            panel.Visible = true
-            if gui then gui.Enabled = true end
-            local sellAllBtn = panel:FindFirstChild("SellAll")
-            if sellAllBtn then
-                sellAllBtn.Visible = true
-                pcall(function()
-                    if typeof(firesignal) == "function" and sellAllBtn.Activated then
-                        firesignal(sellAllBtn.Activated)
-                    end
-                end)
-            end
-        end
-
-        local checkStart = tick()
-        while tick() - checkStart < 3.5 do
-            task.wait(0.2)
-            if fishRemote then
-                pcall(function() fishRemote:FireServer("SellAll") end)
-            end
+        task.spawn(function()
             pcall(function()
-                local coreUI = require(ReplicatedStorage.Modules.Core.UI)
-                if coreUI and coreUI.get then
-                    local b = coreUI.get("SellAllFishButton")
-                    if b then
-                        b.Visible = true
-                        if typeof(firesignal) == "function" and b.MouseButton1Down then
-                            firesignal(b.MouseButton1Down)
-                        end
-                    end
-                end
+                local Net = require(ReplicatedStorage.Modules.Core.Net)
+                if Net and Net.get then Net.get("sell_all_fish") end
             end)
-            if panel and sellAllBtn then
-                sellAllBtn.Visible = true
-                pcall(function()
-                    if typeof(firesignal) == "function" and sellAllBtn.Activated then
-                        firesignal(sellAllBtn.Activated)
-                    end
-                end)
-            end
-            local curCash = getPlayerCash()
-            local remainingFish = getFishCount()
-            if lastSellConfirmed or (curCash > startCash) or (remainingFish == 0) then
-                sellConfirmed = true
-            end
-        end
+        end)
 
-        if sellConfirmed then
-            task.wait(0.3)
+        task.wait(0.3)
+        local curCash = getPlayerCash()
+        if lastSellConfirmed or (curCash > startCash) then
             break
         end
-        task.wait(0.2)
     end
 
     if touchPart and hrp and hrp.Parent and typeof(firetouchinterest) == "function" then
         pcall(function() firetouchinterest(hrp, touchPart, 1) end)
     end
 
-    lastSellConfirmed = false
-
-    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    local gui = pg and pg:FindFirstChild("MD_FishSellGui")
-    local panel = gui and gui:FindFirstChild("FishSellPanel", true)
     if panel then
         local closeBtn = panel:FindFirstChild("Close")
         if closeBtn and typeof(firesignal) == "function" and closeBtn.Activated then
@@ -1600,22 +1387,12 @@ local function sellFishRoutine()
             if noSel then noSel.Visible = false end
         end
     end)
-
     pcall(function()
         local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
-        if itemsUI then
-            if itemsUI.is_open and itemsUI.is_open.set then
-                itemsUI.is_open.set(false)
-            end
-            if itemsUI.inventory_type and itemsUI.inventory_type.set then
-                itemsUI.inventory_type.set("")
-            end
-            if itemsUI.display_check_func and itemsUI.display_check_func.set then
-                itemsUI.display_check_func.set(nil)
-            end
+        if itemsUI and itemsUI.is_open and itemsUI.is_open.set then
+            itemsUI.is_open.set(false)
         end
     end)
-
     pcall(function()
         local SubMenuBackground = require(ReplicatedStorage.Modules.Game.UI.SubMenuBackground)
         if SubMenuBackground and SubMenuBackground.close then
@@ -1623,7 +1400,9 @@ local function sellFishRoutine()
         end
     end)
 
-    task.wait(0.4)
+    sessionCatchCount = 0
+    lastSellConfirmed = false
+    task.wait(0.2)
 
     if hrp and hrp.Parent then
         hrp.Anchored = false
@@ -1631,7 +1410,6 @@ local function sellFishRoutine()
     task.wait(0.1)
 
     local returnCFrame = FISH_ZONES[fish2Zone] or FISH_ZONES["Nivel 0"]
-
     local standPart = workspace:FindFirstChild("MD_FishStand_Safe")
     if not standPart then
         standPart = Instance.new("Part")
@@ -1661,21 +1439,7 @@ local function sellFishRoutine()
         if not hrp.Anchored then hrp.Anchored = true end
     end)
 
-    pcall(function()
-        local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
-        if itemsUI and itemsUI.is_open and itemsUI.is_open.set then
-            itemsUI.is_open.set(false)
-        end
-    end)
-    pcall(function()
-        local SubMenuBackground = require(ReplicatedStorage.Modules.Game.UI.SubMenuBackground)
-        if SubMenuBackground and SubMenuBackground.close then
-            SubMenuBackground.close()
-        end
-    end)
-
-    task.wait(0.4)
-
+    task.wait(0.3)
     local liveChar = LocalPlayer.Character or char
     local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
     local curRod = f2_getBestRod()
@@ -1690,7 +1454,6 @@ local function sellFishRoutine()
         ensureBaitLoaded(curRod, curBait)
     end
 
-    sessionCatchCount = 0
     lastSellTimestamp = os.clock()
     isSellingFish = false
     return true
@@ -1698,6 +1461,7 @@ end
 
 local function fishLoop()
     isSellingFish = false
+    sessionCatchCount = 0
     if not fish2Setup() then
         fish2Active = false
         return
@@ -1895,12 +1659,6 @@ local function fishLoop()
     end
 
     while fish2Active do
-        while isSafeHealing and fish2Active do
-            task.wait(0.25)
-        end
-        if antiSkidsActive and not isSafeHealing and hum and hum.Health < 80 and hum.Health > 0 then
-            safeHealRoutine()
-        end
         local desiredCFrame = FISH_ZONES[fish2Zone] or FISH_ZONES["Nivel 0"]
         if (targetCFrame.Position - desiredCFrame.Position).Magnitude > 1 then
             targetCFrame = desiredCFrame
@@ -1931,10 +1689,10 @@ local function fishLoop()
             task.wait(0.5)
         end
 
-        local currentFish = getFishCount()
-        if currentFish >= MAX_FISH_CAPACITY and not isSellingFish and (os.clock() - lastSellTimestamp > 3) then
+        if sessionCatchCount >= MAX_FISH_CAPACITY and not isSellingFish and (os.clock() - lastSellTimestamp > 3) then
             pcall(sellFishRoutine)
             isSellingFish = false
+            sessionCatchCount = 0
             if not fish2Active then break end
             castInProgress = false
             castAccepted = false
@@ -1942,7 +1700,9 @@ local function fishLoop()
             task.wait(0.5)
             local curRod = f2_getBestRod()
             local curBait = f2_getBait()
-            if curRod then pcall(function() hum:EquipTool(curRod) end) end
+            local liveChar = LocalPlayer.Character or char
+            local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
+            if curRod and liveHum then pcall(function() liveHum:EquipTool(curRod) end) end
             task.wait(0.3)
             if curRod and curBait then ensureBaitLoaded(curRod, curBait) end
             task.wait(0.5)
@@ -1992,13 +1752,11 @@ local function fishLoop()
             task.wait(1.5)
         end
 
-        currentFish = getFishCount()
-        if not castInProgress and currentFish < MAX_FISH_CAPACITY then
+        if not castInProgress and sessionCatchCount < MAX_FISH_CAPACITY then
             local waitDelay = (lastOutcome == "caught") and 0.8 or 2.5
             task.wait(waitDelay)
 
-            currentFish = getFishCount()
-            if fish2Active and not castInProgress and not isSellingFish and not needsBaitRestock and currentFish < MAX_FISH_CAPACITY then
+            if fish2Active and not castInProgress and not isSellingFish and not needsBaitRestock and sessionCatchCount < MAX_FISH_CAPACITY then
                 local currentRod = f2_getBestRod()
                 local currentBait = f2_getBait()
                 if currentRod and (currentBait or f2_hasBaitAvailable()) then
@@ -2054,13 +1812,6 @@ Tabs.Farm2:Slider({
     Value   = { Min = 1, Max = 20, Default = 15 },
     Callback = function(v)
         MAX_FISH_CAPACITY = v
-        if fish2Active and not isSellingFish and getFishCount() >= MAX_FISH_CAPACITY then
-            task.defer(function()
-                if fish2Active and not isSellingFish and getFishCount() >= MAX_FISH_CAPACITY then
-                    sellFishRoutine()
-                end
-            end)
-        end
     end
 })
 Tabs.Farm2:Dropdown({
