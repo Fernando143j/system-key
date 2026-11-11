@@ -1958,12 +1958,14 @@ autoFishToggle = Tabs.Farm2:Toggle({
 
 local Camera = workspace.CurrentCamera
 
-_G.Silent_Enabled   = false
-_G.Silent_Range     = 350
-_G.Silent_FOV       = 130
-_G.Silent_ShowFOV   = false
-_G.Silent_TeamCheck = false
-_G.Silent_Priority  = "Head"
+_G.Silent_Enabled         = false
+_G.Silent_Range           = 350
+_G.Silent_FOV             = 130
+_G.Silent_ShowFOV         = false
+_G.Silent_TeamCheck       = false
+_G.Silent_Priority        = "Head"
+_G.Silent_PredictEnabled  = false
+_G.Silent_PredictStrength = 5
 
 local CurrentTargetPart = nil
 local WeaponEquipped    = false
@@ -1997,6 +1999,50 @@ local function resolveBestPart(targetChar)
     end
 
     return head or torso
+end
+
+-- Predicción: posición futura = posición actual + velocidad * (ping + tiempo de vuelo de bala)
+local function getPredictedPosition(targetPart, origin)
+    local currentPos = targetPart.Position
+
+    if not _G.Silent_PredictEnabled or _G.Silent_PredictStrength <= 0 then
+        return currentPos
+    end
+
+    local ok, result = pcall(function()
+        local velocity = targetPart.AssemblyLinearVelocity or Vector3.zero
+
+        -- Ping en segundos (GetNetworkPing devuelve RTT/2)
+        local ping = 0
+        pcall(function() ping = LocalPlayer:GetNetworkPing() end)
+        if typeof(ping) ~= "number" or ping ~= ping or ping < 0 then ping = 0 end
+        ping = math.clamp(ping, 0, 1)
+
+        -- Tiempo estimado de vuelo de la bala (asume ~800 studs/s, ajustable con el slider)
+        local distance   = (currentPos - origin).Magnitude
+        local travelTime = distance / 800
+
+        -- El slider 1-20 escala el lead: 10 = 1x exacto, 20 = 2x agresivo
+        local strength   = _G.Silent_PredictStrength / 10
+        local predictTime = (travelTime + ping) * strength
+
+        local predicted = currentPos + (velocity * predictTime)
+
+        -- Guard contra NaN / Inf (causa de balas invisibles)
+        if predicted.X ~= predicted.X or predicted.Y ~= predicted.Y or predicted.Z ~= predicted.Z then
+            return currentPos
+        end
+        if predicted.Magnitude > 100000 then
+            return currentPos
+        end
+
+        return predicted
+    end)
+
+    if ok and typeof(result) == "Vector3" then
+        return result
+    end
+    return currentPos
 end
 
 local function getClosestTargetBy3D()
@@ -2053,21 +2099,34 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
             if remoteName == "GlockEvent" and args[1] == "Shoot" and type(args[2]) == "table" then
                 local data   = args[2]
                 local origin = data.origin or Camera.CFrame.Position
-                data.direction = (CurrentTargetPart.Position - origin).Unit
-                return oldNamecall(self, "Shoot", data)
+                local aimPos = getPredictedPosition(CurrentTargetPart, origin)
+                local dir    = aimPos - origin
+                -- Solo toca el paquete si el vector es válido, si no pasa intacto
+                if dir.Magnitude > 0.01 then
+                    data.direction = dir.Unit
+                    return oldNamecall(self, "Shoot", data)
+                end
             end
 
             if remoteName == "MD_ItemsEvent" and args[1] == "FireGun" and type(args[2]) == "table" then
                 local data   = args[2]
                 local origin = data.origin or Camera.CFrame.Position
-                data.direction = (CurrentTargetPart.Position - origin).Unit
-                return oldNamecall(self, "FireGun", data)
+                local aimPos = getPredictedPosition(CurrentTargetPart, origin)
+                local dir    = aimPos - origin
+                if dir.Magnitude > 0.01 then
+                    data.direction = dir.Unit
+                    return oldNamecall(self, "FireGun", data)
+                end
             end
         end
 
         if self == Camera and (method == "ViewportPointToRay" or method == "ScreenPointToRay") then
             local origin = Camera.CFrame.Position
-            return Ray.new(origin, (CurrentTargetPart.Position - origin).Unit)
+            local aimPos = getPredictedPosition(CurrentTargetPart, origin)
+            local dir    = aimPos - origin
+            if dir.Magnitude > 0.01 then
+                return Ray.new(origin, dir.Unit)
+            end
         end
     end
 
@@ -2105,6 +2164,27 @@ Tabs.Combat:Toggle({
         else
             FOVCircleSilent.Visible = _G.Silent_ShowFOV
         end
+    end
+})
+
+Tabs.Combat:Toggle({
+    Title    = "Predicción",
+    Desc     = "Apunta a donde estará el objetivo (velocidad + ping). Actívalo si falla mucho",
+    Icon     = "solar:radar-2-bold",
+    Value    = false,
+    Callback = function(state)
+        _G.Silent_PredictEnabled = state
+    end
+})
+
+Tabs.Combat:Slider({
+    Title    = "Fuerza de Predicción",
+    Desc     = "1-20. Sube si el objetivo se mueve rápido y aún falla. Baja si te pasas de largo",
+    Icon     = "solar:tuning-2-bold",
+    Step     = 1,
+    Value    = { Min = 1, Max = 20, Default = 5 },
+    Callback = function(v)
+        _G.Silent_PredictStrength = v
     end
 })
 
