@@ -1,4 +1,5 @@
 local Players           = game:GetService("Players")
+local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local UserInputService  = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -1375,11 +1376,13 @@ local function getFishOwnedFromGui()
     return 0
 end
 
+local sessionCatchCount = 0
+
 local function getFishCount()
     local inBag = countToolFish()
     local fromGui = getFishOwnedFromGui()
     local fromData = countDataFish()
-    return math.max(inBag, fromGui, fromData)
+    return math.max(inBag, fromGui, fromData, sessionCatchCount)
 end
 
 local function sellFishRoutine()
@@ -1641,16 +1644,21 @@ local function sellFishRoutine()
 
     task.wait(0.4)
 
+    local liveChar = LocalPlayer.Character or char
+    local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
     local curRod = f2_getBestRod()
     local curBait = f2_getBait()
-    if curRod then
-        pcall(function() hum:EquipTool(curRod) end)
-        task.wait(0.3)
+    if curRod and liveChar and liveHum then
+        if not liveChar:FindFirstChild(curRod.Name) then
+            pcall(function() liveHum:EquipTool(curRod) end)
+            task.wait(0.3)
+        end
     end
     if curRod and curBait then
         ensureBaitLoaded(curRod, curBait)
     end
 
+    sessionCatchCount = 0
     lastSellTimestamp = os.clock()
     isSellingFish = false
     return true
@@ -1780,6 +1788,7 @@ local function fishLoop()
             end
 
             if isCatch then
+                sessionCatchCount += 1
                 lastOutcome = "caught"
             elseif type(data) == "string" and (data:lower():find("buy bait") or data:lower():find("out of bait") or data:lower():find("no bait") or data:lower():find("carnada")) then
                 needsBaitRestock = true
@@ -1800,28 +1809,32 @@ local function fishLoop()
         if not fish2Active or castInProgress then return false end
 
         local btn = findCastButton()
-        if btn and btn.Text ~= "CAST" then
-            if btn.Text == "CANCEL" or btn.Text:find("CANCEL") then
+        if btn and btn.Text and btn.Text:upper() ~= "CAST" then
+            if btn.Text:upper():find("CANCEL") then
                 pcall(function() fishRemote:FireServer("Cancel") end)
                 task.wait(0.3)
             end
             local w = 0
-            while btn and btn.Text ~= "CAST" and w < 3 and fish2Active do
+            while btn and btn.Text and btn.Text:upper() ~= "CAST" and w < 2 and fish2Active do
                 task.wait(0.2)
                 w += 0.2
             end
-            if btn and btn.Text ~= "CAST" then
+            if btn and btn.Text and btn.Text:upper() ~= "CAST" then
                 pcall(function() fishRemote:FireServer("Cancel") end)
                 task.wait(0.2)
             end
         end
 
-        if curRod and char and not char:FindFirstChild(curRod.Name) then
-            pcall(function() hum:EquipTool(curRod) end)
-            task.wait(0.2)
+        local liveChar = LocalPlayer.Character or char
+        local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
+        if curRod and liveChar and liveHum and not liveChar:FindFirstChild(curRod.Name) then
+            pcall(function() liveHum:EquipTool(curRod) end)
+            task.wait(0.3)
         end
 
-        ensureBaitLoaded(curRod, curBait)
+        if curRod and curBait then
+            ensureBaitLoaded(curRod, curBait)
+        end
 
         local preSeq = endSeq
         castAccepted = false
@@ -1956,7 +1969,7 @@ local function fishLoop()
             if fish2Active and not castInProgress and not isSellingFish and not needsBaitRestock and currentFish < MAX_FISH_CAPACITY then
                 local currentRod = f2_getBestRod()
                 local currentBait = f2_getBait()
-                if currentRod and currentBait then
+                if currentRod and (currentBait or f2_hasBaitAvailable()) then
                     doCastOnce(currentRod, currentBait, targetCFrame)
                 end
             end
