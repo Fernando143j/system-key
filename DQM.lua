@@ -1,5 +1,4 @@
 local Players           = game:GetService("Players")
-local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local UserInputService  = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -1170,12 +1169,16 @@ local function fish2Setup()
 
     local rodToBuy = selectedRodToBuy or "FishingRodPro"
     local expectedBait = ROD_BAIT[rodToBuy] or "WormtecRegular"
-    local rodTool = f2_findItem(rodToBuy) or f2_getBestRod()
+    local rodTool = f2_findItem(rodToBuy)
     local needRod = (rodTool == nil)
     local needBait = not f2_hasBaitAvailable()
 
     if not needRod and not needBait then
-        if rodTool then pcall(function() hum:EquipTool(rodTool) end) end
+        local liveChar = LocalPlayer.Character or char
+        local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
+        if rodTool and liveHum then
+            pcall(function() liveHum:EquipTool(rodTool) end)
+        end
         task.wait(0.3)
         local curBait = f2_findItem(expectedBait) or f2_getBait()
         if rodTool and curBait then
@@ -1234,11 +1237,15 @@ local function fish2Setup()
         end
     end
 
-    local finalRod = rodTool or f2_getBestRod()
+    local finalRod = rodTool or f2_findItem(rodToBuy) or f2_getBestRod()
     local finalBait = f2_findItem(expectedBait) or f2_getBait()
     if not finalRod then return false end
 
-    pcall(function() hum:EquipTool(finalRod) end)
+    local liveChar = LocalPlayer.Character or char
+    local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
+    if liveHum then
+        pcall(function() liveHum:EquipTool(finalRod) end)
+    end
     task.wait(0.3)
     if finalBait then
         ensureBaitLoaded(finalRod, finalBait)
@@ -1529,17 +1536,42 @@ local function sellFishRoutine()
         end
 
         local checkStart = tick()
-        while tick() - checkStart < 1.0 do
-            task.wait(0.1)
+        while tick() - checkStart < 3.5 do
+            task.wait(0.2)
+            if fishRemote then
+                pcall(function() fishRemote:FireServer("SellAll") end)
+            end
+            pcall(function()
+                local coreUI = require(ReplicatedStorage.Modules.Core.UI)
+                if coreUI and coreUI.get then
+                    local b = coreUI.get("SellAllFishButton")
+                    if b then
+                        b.Visible = true
+                        if typeof(firesignal) == "function" and b.MouseButton1Down then
+                            firesignal(b.MouseButton1Down)
+                        end
+                    end
+                end
+            end)
+            if panel and sellAllBtn then
+                sellAllBtn.Visible = true
+                pcall(function()
+                    if typeof(firesignal) == "function" and sellAllBtn.Activated then
+                        firesignal(sellAllBtn.Activated)
+                    end
+                end)
+            end
             local curCash = getPlayerCash()
             local remainingFish = getFishCount()
             if lastSellConfirmed or (curCash > startCash) or (remainingFish == 0) then
                 sellConfirmed = true
-                break
             end
         end
 
-        if sellConfirmed then break end
+        if sellConfirmed then
+            task.wait(0.3)
+            break
+        end
         task.wait(0.2)
     end
 
@@ -2055,6 +2087,19 @@ Tabs.Farm2:Dropdown({
             ["Fishing Rod Ultimate"] = "FishingRodUltimate",
         }
         selectedRodToBuy = map[v] or "FishingRodPro"
+        local owned = f2_findItem(selectedRodToBuy)
+        local liveChar = LocalPlayer.Character or char
+        local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
+        if owned and liveHum then
+            pcall(function() liveHum:EquipTool(owned) end)
+        elseif not owned and fish2Active then
+            if fish2Thread then task.cancel(fish2Thread); fish2Thread = nil end
+            killFishMove()
+            if fishHoldConn then pcall(function() fishHoldConn:Disconnect() end); fishHoldConn = nil end
+            if fishEventConn then pcall(function() fishEventConn:Disconnect() end); fishEventConn = nil end
+            if hrp and hrp.Parent then hrp.Anchored = false end
+            fish2Thread = task.spawn(fishLoop)
+        end
     end
 })
 autoFishToggle = Tabs.Farm2:Toggle({
