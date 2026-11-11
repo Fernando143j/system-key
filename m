@@ -1,5 +1,4 @@
--- Hola
-
+-- Hola zzz
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local UserInputService  = game:GetService("UserInputService")
@@ -1276,8 +1275,11 @@ local function sellFishRoutine()
     task.wait(0.1)
 
     fish2Move(COORD_SELL_WP1)
+    fish2HoldPosition(COORD_SELL_WP1, 2.0)
     task.wait(0.1)
+
     fish2Move(COORD_SELL_WP2)
+    fish2HoldPosition(COORD_SELL_WP2, 2.0)
     task.wait(0.1)
 
     local beacon = workspace:FindFirstChild("SellFishBeacon", true)
@@ -1301,9 +1303,15 @@ local function sellFishRoutine()
 
     local fishRemote = ReplicatedStorage:FindFirstChild("MD_FishingRemote")
     if fishRemote then
-        pcall(function() fishRemote:FireServer("OpenSell") end)
         pcall(function() fishRemote:FireServer("SellList") end)
     end
+
+    pcall(function()
+        local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
+        if itemsUI and itemsUI.select_an_item then
+            itemsUI.select_an_item(function(p1, p2) return p2 == "fish" end, function() end)
+        end
+    end)
 
     local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
     local gui = pg and pg:FindFirstChild("MD_FishSellGui")
@@ -1320,24 +1328,28 @@ local function sellFishRoutine()
         end
     end)
 
+    task.wait(0.5)
+
     local startCash = getPlayerCash()
     lastSellConfirmed = false
+    local sellConfirmed = false
 
-    local sellAllBtn = panel and panel:FindFirstChild("SellAll")
-    for attempt = 1, 10 do
-        if not fish2Active then break end
-
+    local checkStart = tick()
+    while tick() - checkStart < 3.5 do
         if fishRemote then
             pcall(function() fishRemote:FireServer("SellAll") end)
         end
 
-        if sellAllBtn then
-            sellAllBtn.Visible = true
-            pcall(function()
-                if typeof(firesignal) == "function" and sellAllBtn.Activated then
-                    firesignal(sellAllBtn.Activated)
-                end
-            end)
+        if panel then
+            local sellAllBtn = panel:FindFirstChild("SellAll")
+            if sellAllBtn then
+                sellAllBtn.Visible = true
+                pcall(function()
+                    if typeof(firesignal) == "function" and sellAllBtn.Activated then
+                        firesignal(sellAllBtn.Activated)
+                    end
+                end)
+            end
         end
 
         pcall(function()
@@ -1363,6 +1375,7 @@ local function sellFishRoutine()
         task.wait(0.3)
         local curCash = getPlayerCash()
         if lastSellConfirmed or (curCash > startCash) then
+            sellConfirmed = true
             break
         end
     end
