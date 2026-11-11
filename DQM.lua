@@ -1114,28 +1114,40 @@ local function findCastButton()
     return gui and gui:FindFirstChild("FishingCastButton", true)
 end
 
-local function ensureBaitLoaded(rod, bait)
-    if not rod or not bait then return end
-    local curAmmo = nil
+local function getRodBaitAmmo(rod)
+    if not rod then return 0 end
     for _, attr in ipairs({"MD_Ammo", "Ammo", "Bait", "BaitCount", "MD_Bait"}) do
         local val = rod:GetAttribute(attr)
         if typeof(val) == "number" then
-            curAmmo = val
-            break
+            return val
         end
     end
-    if curAmmo == nil then
-        for _, ch in ipairs(rod:GetChildren()) do
-            if ch:IsA("NumberValue") or ch:IsA("IntValue") then
-                local n = ch.Name:lower()
-                if n:find("ammo") or n:find("bait") or n:find("count") then
-                    curAmmo = ch.Value
-                    break
-                end
+    for _, ch in ipairs(rod:GetChildren()) do
+        if ch:IsA("NumberValue") or ch:IsA("IntValue") then
+            local n = ch.Name:lower()
+            if n:find("ammo") or n:find("bait") or n:find("count") then
+                return ch.Value
             end
         end
     end
-    if curAmmo == nil or curAmmo <= 0 then
+    return 0
+end
+
+local function f2_hasBaitAvailable()
+    local b = f2_getBait()
+    if b ~= nil then return true end
+    local r = f2_getBestRod()
+    if r then
+        local ammo = getRodBaitAmmo(r)
+        if ammo and ammo > 0 then return true end
+    end
+    return false
+end
+
+local function ensureBaitLoaded(rod, bait)
+    if not rod then return end
+    local curAmmo = getRodBaitAmmo(rod)
+    if curAmmo <= 0 and bait then
         local houseR = ReplicatedStorage:FindFirstChild("MD_HouseRentalRemote")
         if houseR then
             pcall(function() houseR:FireServer("EquipFishingBait", bait) end)
@@ -1156,15 +1168,17 @@ local function fish2Setup()
 
     local rodToBuy = selectedRodToBuy or "FishingRodPro"
     local expectedBait = ROD_BAIT[rodToBuy] or "WormtecRegular"
-    local rodTool = f2_findItem(rodToBuy)
-    local baitTool = f2_findItem(expectedBait)
+    local rodTool = f2_findItem(rodToBuy) or f2_getBestRod()
     local needRod = (rodTool == nil)
-    local needBait = (baitTool == nil)
+    local needBait = not f2_hasBaitAvailable()
 
     if not needRod and not needBait then
-        pcall(function() hum:EquipTool(rodTool) end)
+        if rodTool then pcall(function() hum:EquipTool(rodTool) end) end
         task.wait(0.3)
-        ensureBaitLoaded(rodTool, baitTool)
+        local curBait = f2_findItem(expectedBait) or f2_getBait()
+        if rodTool and curBait then
+            ensureBaitLoaded(rodTool, curBait)
+        end
         return true
     end
 
@@ -1216,16 +1230,17 @@ local function fish2Setup()
             task.wait(0.4)
             waited += 0.4
         end
-        baitTool = f2_findItem(expectedBait)
     end
 
     local finalRod = rodTool or f2_getBestRod()
-    local finalBait = baitTool or f2_getBait()
-    if not finalRod or not finalBait then return false end
+    local finalBait = f2_findItem(expectedBait) or f2_getBait()
+    if not finalRod then return false end
 
     pcall(function() hum:EquipTool(finalRod) end)
     task.wait(0.3)
-    ensureBaitLoaded(finalRod, finalBait)
+    if finalBait then
+        ensureBaitLoaded(finalRod, finalBait)
+    end
     return true
 end
 
@@ -1269,7 +1284,7 @@ local function baitRestock()
         ensureBaitLoaded(rod, bait)
         return true
     end
-    return false
+    return f2_hasBaitAvailable()
 end
 
 local KNOWN_FISH = {
@@ -1450,12 +1465,6 @@ local function sellFishRoutine()
         end
 
         pcall(function()
-            local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
-            if itemsUI and itemsUI.select_an_item then
-                itemsUI.select_an_item(function(p1, p2) return p2 == "fish" end, function() end)
-            end
-        end)
-        pcall(function()
             local coreUI = require(ReplicatedStorage.Modules.Core.UI)
             if coreUI and coreUI.get then
                 local b = coreUI.get("SellAllFishButton")
@@ -1555,8 +1564,19 @@ local function sellFishRoutine()
         if not hrp.Anchored then hrp.Anchored = true end
     end)
 
+    pcall(function()
+        local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
+        if itemsUI and itemsUI.is_open and itemsUI.is_open.set then
+            itemsUI.is_open.set(false)
+        end
+    end)
+
     local curRod = f2_getBestRod()
     local curBait = f2_getBait()
+    if curRod then
+        pcall(function() hum:EquipTool(curRod) end)
+        task.wait(0.3)
+    end
     if curRod and curBait then
         ensureBaitLoaded(curRod, curBait)
     end
@@ -1799,11 +1819,15 @@ local function fishLoop()
         if currentFish >= MAX_FISH_CAPACITY and not isSellingFish and (os.clock() - lastSellTimestamp > 3) then
             sellFishRoutine()
             if not fish2Active then break end
+            castInProgress = false
+            castAccepted = false
             lastOutcome = "none"
+            local curRod = f2_getBestRod()
+            if curRod then pcall(function() hum:EquipTool(curRod) end) end
             task.wait(0.5)
         end
 
-        if needsBaitRestock or f2_getBait() == nil then
+        if needsBaitRestock or not f2_hasBaitAvailable() then
             needsBaitRestock = false
             castAccepted = false
             castInProgress = false
@@ -1813,7 +1837,7 @@ local function fishLoop()
             task.wait(0.2)
 
             local restockOk = baitRestock()
-            if not restockOk or not f2_getBait() then
+            if not restockOk or not f2_hasBaitAvailable() then
                 break
             end
 
