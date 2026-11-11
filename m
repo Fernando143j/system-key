@@ -1,4 +1,4 @@
--- Hola zzz
+-- Hola zzzccccc
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local UserInputService  = game:GetService("UserInputService")
@@ -1292,8 +1292,12 @@ local function sellFishRoutine()
         end
     end
 
+    local liveChar = LocalPlayer.Character or char
+    local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
+    if liveHum then pcall(function() liveHum:UnequipTools() end) end
+
     if touchPart and hrp and hrp.Parent then
-        pcall(function() hrp.CFrame = CFrame.new(touchPart.Position + Vector3.new(0, 1.2, 0)) end)
+        pcall(function() hrp.CFrame = CFrame.new(touchPart.Position + Vector3.new(0, 1.0, 0)) end)
         if typeof(firetouchinterest) == "function" then
             pcall(function() firetouchinterest(hrp, touchPart, 0) end)
         end
@@ -1302,35 +1306,64 @@ local function sellFishRoutine()
     end
 
     local fishRemote = ReplicatedStorage:FindFirstChild("MD_FishingRemote")
-    if fishRemote then
-        pcall(function() fishRemote:FireServer("SellList") end)
-    end
 
     pcall(function()
-        local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
-        if itemsUI and itemsUI.select_an_item then
-            itemsUI.select_an_item(function(p1, p2) return p2 == "fish" end, function() end)
+        local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        local mg = pg and pg:FindFirstChild("MD_FishSellGui")
+        if mg then
+            local pnl = mg:FindFirstChild("FishSellPanel", true)
+            if pnl then pnl.Visible = false end
+            mg.Enabled = false
         end
     end)
 
-    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    local gui = pg and pg:FindFirstChild("MD_FishSellGui")
-    local panel = gui and gui:FindFirstChild("FishSellPanel", true)
-    if panel then
-        panel.Visible = true
-        if gui then gui.Enabled = true end
-    end
+    local ItemsUI = nil
+    pcall(function()
+        ItemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
+        local ItemUtils = require(ReplicatedStorage.Modules.Game.Inventory.ItemUtils)
+        local function f1(p1, p2)
+            ItemUtils.get_item_instance(p1.name)
+            return p2 == "fish"
+        end
+        if ItemsUI and ItemsUI.select_an_item then
+            ItemsUI.select_an_item(f1, function() end)
+        end
+    end)
+
+    local sellAllBtn = nil
     pcall(function()
         local coreUI = require(ReplicatedStorage.Modules.Core.UI)
         if coreUI and coreUI.get then
-            local b = coreUI.get("SellAllFishButton")
-            if b then b.Visible = true end
+            sellAllBtn = coreUI.get("SellAllFishButton")
+            if sellAllBtn then
+                sellAllBtn.Visible = true
+            end
         end
     end)
 
-    task.wait(0.5)
+    local function callSellAllFish()
+        local res = nil
+        pcall(function()
+            local Net = require(ReplicatedStorage.Modules.Core.Net)
+            local cleanFn = setfenv(function()
+                return Net.get("sell_all_fish")
+            end, {
+                Net = Net,
+                pcall = pcall,
+                pairs = pairs,
+                type = type
+            })
+            res = cleanFn()
+        end)
+        return res
+    end
+
+    if sellAllBtn and typeof(firesignal) == "function" and sellAllBtn.MouseButton1Down then
+        pcall(function() firesignal(sellAllBtn.MouseButton1Down) end)
+    end
 
     local startCash = getPlayerCash()
+    local startFish = countDataFish()
     lastSellConfirmed = false
     local sellConfirmed = false
 
@@ -1340,43 +1373,34 @@ local function sellFishRoutine()
             pcall(function() fishRemote:FireServer("SellAll") end)
         end
 
-        if panel then
-            local sellAllBtn = panel:FindFirstChild("SellAll")
-            if sellAllBtn then
-                sellAllBtn.Visible = true
-                pcall(function()
-                    if typeof(firesignal) == "function" and sellAllBtn.Activated then
-                        firesignal(sellAllBtn.Activated)
-                    end
-                end)
-            end
-        end
-
-        pcall(function()
-            local coreUI = require(ReplicatedStorage.Modules.Core.UI)
-            if coreUI and coreUI.get then
-                local b = coreUI.get("SellAllFishButton")
-                if b then
-                    b.Visible = true
-                    if typeof(firesignal) == "function" and b.MouseButton1Down then
-                        firesignal(b.MouseButton1Down)
-                    end
-                end
-            end
-        end)
-
         task.spawn(function()
             pcall(function()
-                local Net = require(ReplicatedStorage.Modules.Core.Net)
-                if Net and Net.get then Net.get("sell_all_fish") end
+                local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+                local getRemote = remotes and remotes:FindFirstChild("Get")
+                if getRemote then
+                    getRemote:InvokeServer(0, "sell_all_fish")
+                end
             end)
         end)
 
-        task.wait(0.3)
+        task.spawn(function()
+            local r = callSellAllFish()
+            if r then lastSellConfirmed = true end
+        end)
+
+        if sellAllBtn and typeof(firesignal) == "function" and sellAllBtn.MouseButton1Down then
+            pcall(function() firesignal(sellAllBtn.MouseButton1Down) end)
+        end
+
+        task.wait(0.35)
+
         local curCash = getPlayerCash()
-        if lastSellConfirmed or (curCash > startCash) then
+        local curFish = countDataFish()
+        if lastSellConfirmed or (curCash > startCash) or (startFish > 0 and curFish < startFish) then
             sellConfirmed = true
-            break
+            if tick() - checkStart >= 2.0 then
+                break
+            end
         end
     end
 
@@ -1384,13 +1408,11 @@ local function sellFishRoutine()
         pcall(function() firetouchinterest(hrp, touchPart, 1) end)
     end
 
-    if panel then
-        local closeBtn = panel:FindFirstChild("Close")
-        if closeBtn and typeof(firesignal) == "function" and closeBtn.Activated then
-            pcall(function() firesignal(closeBtn.Activated) end)
+    pcall(function()
+        if ItemsUI and ItemsUI.is_open and ItemsUI.is_open.set then
+            ItemsUI.is_open.set(false)
         end
-        panel.Visible = false
-    end
+    end)
     pcall(function()
         local coreUI = require(ReplicatedStorage.Modules.Core.UI)
         if coreUI and coreUI.get then
@@ -1398,12 +1420,6 @@ local function sellFishRoutine()
             if b then b.Visible = false end
             local noSel = coreUI.get("NoItemsSelection")
             if noSel then noSel.Visible = false end
-        end
-    end)
-    pcall(function()
-        local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
-        if itemsUI and itemsUI.is_open and itemsUI.is_open.set then
-            itemsUI.is_open.set(false)
         end
     end)
     pcall(function()
@@ -1453,13 +1469,13 @@ local function sellFishRoutine()
     end)
 
     task.wait(0.3)
-    local liveChar = LocalPlayer.Character or char
-    local liveHum = (liveChar and liveChar:FindFirstChildOfClass("Humanoid")) or hum
+    local curChar = LocalPlayer.Character or char
+    local curHum = (curChar and curChar:FindFirstChildOfClass("Humanoid")) or hum
     local curRod = f2_getBestRod()
     local curBait = f2_getBait()
-    if curRod and liveChar and liveHum then
-        if not liveChar:FindFirstChild(curRod.Name) then
-            pcall(function() liveHum:EquipTool(curRod) end)
+    if curRod and curChar and curHum then
+        if not curChar:FindFirstChild(curRod.Name) then
+            pcall(function() curHum:EquipTool(curRod) end)
             task.wait(0.3)
         end
     end
@@ -1577,7 +1593,8 @@ local function fishLoop()
             local isCatch = false
             if type(data) == "string" then
                 local msg = data:lower()
-                if msg:find("caught") or msg:find("atrapado") or msg:find("capturado") or msg:find("pesca") or msg:find("fish") then
+                local isEscape = msg:find("escape") or msg:find("escap") or msg:find("perdi") or msg:find("lost") or msg:find("away") or msg:find("fall") or msg:find("snap")
+                if not isEscape and (msg:find("caught") or msg:find("atrap") or msg:find("captur") or msg:find("conseguiste")) then
                     isCatch = true
                 end
             elseif type(data) == "table" then
@@ -1587,7 +1604,8 @@ local function fishLoop()
                     for _, v in pairs(data) do
                         if type(v) == "string" then
                             local msg = v:lower()
-                            if msg:find("caught") or msg:find("atrapado") or msg:find("capturado") then
+                            local isEscape = msg:find("escape") or msg:find("escap") or msg:find("perdi") or msg:find("lost") or msg:find("away") or msg:find("fall") or msg:find("snap")
+                            if not isEscape and (msg:find("caught") or msg:find("atrap") or msg:find("captur")) then
                                 isCatch = true
                                 break
                             end
@@ -1595,6 +1613,14 @@ local function fishLoop()
                     end
                 end
             end
+
+            local preDataFish = countDataFish()
+            task.delay(0.3, function()
+                local postDataFish = countDataFish()
+                if postDataFish > preDataFish then
+                    sessionCatchCount = postDataFish
+                end
+            end)
 
             if isCatch then
                 sessionCatchCount += 1
@@ -1700,6 +1726,11 @@ local function fishLoop()
             end)
 
             task.wait(0.5)
+        end
+
+        local currentFishCount = countDataFish()
+        if currentFishCount > 0 then
+            sessionCatchCount = math.max(sessionCatchCount, currentFishCount)
         end
 
         if sessionCatchCount >= MAX_FISH_CAPACITY and not isSellingFish and (os.clock() - lastSellTimestamp > 3) then
