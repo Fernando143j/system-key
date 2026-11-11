@@ -792,6 +792,7 @@ end
 
 local function turnOffAutoFish(msg)
     fish2Active = false
+    isSellingFish = false
     if fish2Thread then
         task.cancel(fish2Thread)
         fish2Thread = nil
@@ -1322,6 +1323,20 @@ local function isToolAFish(tool)
     return false
 end
 
+local function countDataFish()
+    local c = 0
+    pcall(function()
+        local Data = require(ReplicatedStorage.Modules.Core.Data)
+        local ItemUtils = require(ReplicatedStorage.Modules.Game.Inventory.ItemUtils)
+        if Data and ItemUtils and ItemUtils.iterate_through_items_of_type then
+            ItemUtils.iterate_through_items_of_type(Data, "fish", function(item)
+                c += (tonumber(item and item.amount) or 1)
+            end)
+        end
+    end)
+    return c
+end
+
 local function countToolFish()
     local total = 0
     local bp = LocalPlayer:FindFirstChildOfClass("Backpack")
@@ -1363,7 +1378,8 @@ end
 local function getFishCount()
     local inBag = countToolFish()
     local fromGui = getFishOwnedFromGui()
-    return math.max(inBag, fromGui)
+    local fromData = countDataFish()
+    return math.max(inBag, fromGui, fromData)
 end
 
 local function sellFishRoutine()
@@ -1458,11 +1474,26 @@ local function sellFishRoutine()
         end
 
         if getRemote then
-            pcall(function() getRemote:InvokeServer(1, "sell_all_fish") end)
+            task.spawn(function()
+                pcall(function() getRemote:InvokeServer(1, "sell_all_fish") end)
+            end)
         end
         if sendRemote then
             pcall(function() sendRemote:FireServer(1, "sell_all_fish") end)
         end
+        task.spawn(function()
+            pcall(function()
+                local Net = require(ReplicatedStorage.Modules.Core.Net)
+                if Net and Net.get then Net.get("sell_all_fish") end
+            end)
+        end)
+
+        pcall(function()
+            local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
+            if itemsUI and itemsUI.select_an_item then
+                itemsUI.select_an_item(function(p1, p2) return p2 == "fish" end, function() end)
+            end
+        end)
 
         pcall(function()
             local coreUI = require(ReplicatedStorage.Modules.Core.UI)
@@ -1530,10 +1561,39 @@ local function sellFishRoutine()
         if coreUI and coreUI.get then
             local b = coreUI.get("SellAllFishButton")
             if b then b.Visible = false end
+            local noSel = coreUI.get("NoItemsSelection")
+            if noSel then noSel.Visible = false end
         end
     end)
 
-    task.wait(0.5)
+    pcall(function()
+        local itemsUI = require(ReplicatedStorage.Modules.Game.Inventory.ItemsUI)
+        if itemsUI then
+            if itemsUI.is_open and itemsUI.is_open.set then
+                itemsUI.is_open.set(false)
+            end
+            if itemsUI.inventory_type and itemsUI.inventory_type.set then
+                itemsUI.inventory_type.set("")
+            end
+            if itemsUI.display_check_func and itemsUI.display_check_func.set then
+                itemsUI.display_check_func.set(nil)
+            end
+        end
+    end)
+
+    pcall(function()
+        local SubMenuBackground = require(ReplicatedStorage.Modules.Game.UI.SubMenuBackground)
+        if SubMenuBackground and SubMenuBackground.close then
+            SubMenuBackground.close()
+        end
+    end)
+
+    task.wait(0.4)
+
+    if hrp and hrp.Parent then
+        hrp.Anchored = false
+    end
+    task.wait(0.1)
 
     local returnCFrame = FISH_ZONES[fish2Zone] or FISH_ZONES["Nivel 0"]
 
@@ -1551,10 +1611,12 @@ local function sellFishRoutine()
 
     fish2Move(returnCFrame)
 
-    hrp.CFrame = returnCFrame
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
-    hrp.Anchored = true
+    if hrp and hrp.Parent then
+        hrp.CFrame = returnCFrame
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+        hrp.Anchored = true
+    end
 
     if fishHoldConn then pcall(function() fishHoldConn:Disconnect() end) end
     fishHoldConn = RunService.Heartbeat:Connect(function()
@@ -1570,6 +1632,14 @@ local function sellFishRoutine()
             itemsUI.is_open.set(false)
         end
     end)
+    pcall(function()
+        local SubMenuBackground = require(ReplicatedStorage.Modules.Game.UI.SubMenuBackground)
+        if SubMenuBackground and SubMenuBackground.close then
+            SubMenuBackground.close()
+        end
+    end)
+
+    task.wait(0.4)
 
     local curRod = f2_getBestRod()
     local curBait = f2_getBait()
@@ -1587,6 +1657,7 @@ local function sellFishRoutine()
 end
 
 local function fishLoop()
+    isSellingFish = false
     if not fish2Setup() then
         fish2Active = false
         return
@@ -1817,13 +1888,18 @@ local function fishLoop()
 
         local currentFish = getFishCount()
         if currentFish >= MAX_FISH_CAPACITY and not isSellingFish and (os.clock() - lastSellTimestamp > 3) then
-            sellFishRoutine()
+            pcall(sellFishRoutine)
+            isSellingFish = false
             if not fish2Active then break end
             castInProgress = false
             castAccepted = false
             lastOutcome = "none"
+            task.wait(0.5)
             local curRod = f2_getBestRod()
+            local curBait = f2_getBait()
             if curRod then pcall(function() hum:EquipTool(curRod) end) end
+            task.wait(0.3)
+            if curRod and curBait then ensureBaitLoaded(curRod, curBait) end
             task.wait(0.5)
         end
 
@@ -1976,6 +2052,7 @@ autoFishToggle = Tabs.Farm2:Toggle({
     Callback = function(state)
         if state then
             if fish2Active then return end
+            isSellingFish = false
             if hrp and hrp.Parent then
                 fishSavedOrigin = hrp.CFrame
             end
@@ -1983,6 +2060,7 @@ autoFishToggle = Tabs.Farm2:Toggle({
             fish2Thread = task.spawn(fishLoop)
         else
             fish2Active = false
+            isSellingFish = false
             if fish2Thread then task.cancel(fish2Thread); fish2Thread = nil end
             killFishMove()
             if fishHoldConn then pcall(function() fishHoldConn:Disconnect() end); fishHoldConn = nil end
