@@ -1,3 +1,5 @@
+-- z
+
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local UserInputService  = game:GetService("UserInputService")
@@ -2373,6 +2375,7 @@ _G.Silent_Prediction   = false
 _G.Silent_PredictionMS = 100
 
 local CurrentTargetPart = nil
+local CurrentAimPoint   = nil
 local WeaponEquipped    = false
 
 local FOVCircleSilent = Drawing.new("Circle")
@@ -2503,7 +2506,7 @@ local function resolveAimPoint(part, origin)
     }
 
     local hit = workspace:Raycast(origin, dir, aimRayParams)
-    if hit then
+    if hit and part.Parent then
         local hitDist  = (hit.Position - origin).Magnitude
         local realDist = (part.Position - origin).Magnitude
         local hitChar  = hit.Instance:IsDescendantOf(part.Parent)
@@ -2514,35 +2517,43 @@ local function resolveAimPoint(part, origin)
 
     return point
 end
+
+-- the hook only rewrites the vector. every raycast/velocity read happens in the
+-- RenderStepped pass above, because calling workspace:Raycast from inside a
+-- __namecall hook re-enters the hook and makes the original FireServer abort --
+-- that is exactly what killed the shots (tracer drawn, remote never sent).
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local method = getnamecallmethod()
     local args   = {...}
 
     if _G.Silent_Enabled and WeaponEquipped and not checkcaller() and CurrentTargetPart then
-        if method == "FireServer" then
-            local remoteName = self.Name
-
-            if remoteName == "GlockEvent" and args[1] == "Shoot" and type(args[2]) == "table" then
-                local data   = args[2]
-                local origin = data.origin or Camera.CFrame.Position
-                data.direction = (resolveAimPoint(CurrentTargetPart, origin) - origin).Unit
-                return oldNamecall(self, "Shoot", data)
+        pcall(function()
+            if method == "FireServer" then
+                local remoteName = self.Name
+                local isGunShot = (remoteName == "GlockEvent" and args[1] == "Shoot")
+                    or (remoteName == "MD_ItemsEvent" and args[1] == "FireGun")
+                if isGunShot and type(args[2]) == "table" then
+                    local data   = args[2]
+                    local origin = data.origin or Camera.CFrame.Position
+                    local point  = CurrentAimPoint or CurrentTargetPart.Position
+                    local dir    = point - origin
+                    if dir.Magnitude > 0.05 then
+                        data.direction = dir.Unit
+                    end
+                end
+            elseif self == Camera and (method == "ViewportPointToRay" or method == "ScreenPointToRay") then
+                local origin = Camera.CFrame.Position
+                local point  = CurrentAimPoint or CurrentTargetPart.Position
+                local dir    = point - origin
+                if dir.Magnitude > 0.05 then
+                    return Ray.new(origin, dir.Unit)
+                end
             end
-
-            if remoteName == "MD_ItemsEvent" and args[1] == "FireGun" and type(args[2]) == "table" then
-                local data   = args[2]
-                local origin = data.origin or Camera.CFrame.Position
-                data.direction = (resolveAimPoint(CurrentTargetPart, origin) - origin).Unit
-                return oldNamecall(self, "FireGun", data)
-            end
-        end
-
-        if self == Camera and (method == "ViewportPointToRay" or method == "ScreenPointToRay") then
-            local origin = Camera.CFrame.Position
-            return Ray.new(origin, (resolveAimPoint(CurrentTargetPart, origin) - origin).Unit)
-        end
+        end)
     end
 
+    -- always forward the original call, mutated or not. a failed rewrite must never
+    -- eat the shot.
     return oldNamecall(self, ...)
 end))
 
@@ -2552,8 +2563,15 @@ RunService.RenderStepped:Connect(function()
 
     if _G.Silent_Enabled and WeaponEquipped then
         CurrentTargetPart = getClosestTargetBy3D()
+        if CurrentTargetPart then
+            local ok, point = pcall(resolveAimPoint, CurrentTargetPart, Camera.CFrame.Position)
+            CurrentAimPoint = (ok and typeof(point) == "Vector3") and point or CurrentTargetPart.Position
+        else
+            CurrentAimPoint = nil
+        end
     else
         CurrentTargetPart = nil
+        CurrentAimPoint   = nil
     end
 
     FOVCircleSilent.Position = center
@@ -2573,6 +2591,7 @@ Tabs.Combat:Toggle({
         _G.Silent_Enabled = state
         if not state then
             CurrentTargetPart       = nil
+            CurrentAimPoint         = nil
             FOVCircleSilent.Visible = false
         else
             FOVCircleSilent.Visible = _G.Silent_ShowFOV
