@@ -2373,6 +2373,7 @@ _G.Silent_TeamCheck = false
 _G.Silent_Priority  = "Head"
 _G.Silent_Prediction   = false
 _G.Silent_PredictionMS = 100
+_G.Silent_WallCheck    = false
 
 local CurrentTargetPart = nil
 local CurrentAimPoint   = nil
@@ -2409,6 +2410,46 @@ local function resolveBestPart(targetChar)
     return head or torso
 end
 
+-- wall check ---------------------------------------------------------------
+-- one ray from the shot origin and one from the body. if either is blocked by
+-- solid geometry the target is not exposed. runs in RenderStepped, never in the
+-- __namecall hook.
+local wallParams = RaycastParams.new()
+wallParams.FilterType = Enum.RaycastFilterType.Exclude
+wallParams.IgnoreWater = true
+wallParams.RespectCanCollide = true
+
+local function hasLineOfSight(part)
+    if not _G.Silent_WallCheck then return true end
+    if not part or not part.Parent then return false end
+
+    local myChar = LocalPlayer.Character
+    if not myChar then return false end
+
+    local myHead = myChar:FindFirstChild("Head")
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+
+    local origins = { Camera.CFrame.Position }
+    if myHead then table.insert(origins, myHead.Position) end
+    if myRoot then table.insert(origins, myRoot.Position + Vector3.new(0, 1.5, 0)) end
+
+    local filter = { Camera, myChar }
+    if part.Parent and part.Parent ~= myChar then table.insert(filter, part.Parent) end
+
+    for _, origin in ipairs(origins) do
+        local dir = part.Position - origin
+        if dir.Magnitude > 0.1 then
+            wallParams.FilterDescendantsInstances = filter
+            local hit = workspace:Raycast(origin, dir, wallParams)
+            if hit and (hit.Position - origin).Magnitude < dir.Magnitude - 1.0 then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
 local function getClosestTargetBy3D()
     local c = LocalPlayer.Character
     if not c or not c:FindFirstChild("HumanoidRootPart") then return nil end
@@ -2417,6 +2458,8 @@ local function getClosestTargetBy3D()
 
     local bestPart      = nil
     local minDistance3D = math.huge
+    local currentValid  = false
+    local currentDist   = math.huge
 
     local playerPool = _G.GetRealPlayers and _G.GetRealPlayers() or Players:GetPlayers()
 
@@ -2435,7 +2478,11 @@ local function getClosestTargetBy3D()
 
                         if onScreen then
                             local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
-                            if screenDist <= _G.Silent_FOV then
+                            if screenDist <= _G.Silent_FOV and hasLineOfSight(targetPart) then
+                                if targetPart == CurrentTargetPart then
+                                    currentValid = true
+                                    currentDist  = dist3D
+                                end
                                 if dist3D < minDistance3D then
                                     minDistance3D = dist3D
                                     bestPart      = targetPart
@@ -2446,6 +2493,12 @@ local function getClosestTargetBy3D()
                 end
             end
         end
+    end
+
+    -- hysteresis: keep the target already locked unless a new one is clearly closer.
+    -- stops the aim flicking between two enemies at similar distance every frame.
+    if currentValid and bestPart and bestPart ~= CurrentTargetPart and currentDist <= minDistance3D * 1.15 then
+        return CurrentTargetPart
     end
 
     return bestPart
@@ -2604,7 +2657,7 @@ Tabs.Combat:Slider({
     Desc     = "Tamaño del área central de captura",
     Icon     = "solar:maximize-square-minimalistic-bold",
     Step     = 1,
-    Value    = { Min = 1, Max = 360, Default = 130 },
+    Value    = { Min = 1, Max = 560, Default = 130 },
     Callback = function(v)
         _G.Silent_FOV = v
         FOVCircleSilent.Radius = v
@@ -2640,6 +2693,18 @@ Tabs.Combat:Slider({
     Value    = { Min = 0, Max = 400, Default = 100 },
     Callback = function(v)
         _G.Silent_PredictionMS = v
+    end
+})
+
+Tabs.Combat:Toggle({
+    Title    = "Wall Check",
+    Desc     = "Solo valida enemigos al descubierto, sin paredes de por medio",
+    Icon     = "solar:wall-bold",
+    Value    = false,
+    Callback = function(state)
+        _G.Silent_WallCheck = state
+        CurrentTargetPart   = nil
+        CurrentAimPoint     = nil
     end
 })
 
